@@ -24,9 +24,8 @@ KST = ZoneInfo("Asia/Seoul")
 HERE = Path(__file__).parent
 SAMPLE_CSV = HERE / "sample.csv"
 SITE_FILE = HERE / "site.json"
-REQUIRED = ("제목", "내용", "공개")
-OPTIONAL = ("분류", "링크")
-PUBLIC_VALUES = {"Y", "YES", "예", "O"}
+REQUIRED = ("제목", "내용", "분류", "링크", "공개")
+PUBLIC_VALUE = "Y"
 
 
 class DataError(ValueError):
@@ -66,29 +65,31 @@ def parse_rows(text):
     """열 이름을 확인하고, 공개=Y인 행만 골라 정리합니다. 시트의 행 번호(머리글=1행)를 함께 남깁니다."""
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
-        raise DataError("시트가 비어 있습니다. 1행에 열 이름을 적으세요.")
-    header = [name.strip() for name in reader.fieldnames]
+        raise DataError("1행이 비어 있습니다. 1행에 열 이름을 적으세요.")
+    header = [name.strip() for name in reader.fieldnames if name]
     missing = [name for name in REQUIRED if name not in header]
     if missing:
-        raise DataError(f"필수 열이 없습니다: {', '.join(missing)} / 현재 열: {', '.join(header) or '(없음)'}")
+        raise DataError(f"1행 헤더에 필수 열이 빠져 있습니다: {', '.join(missing)} (현재 열: {', '.join(header) or '(없음)'})")
     items, hidden = [], 0
+    total_data_rows = 0
     for number, row in enumerate(reader, start=2):
         row = {(key or "").strip(): (value or "").strip() for key, value in row.items() if key is not None}
         if not any(row.values()):
             continue
-        if row.get("공개", "").upper() not in PUBLIC_VALUES:
+        total_data_rows += 1
+        if row.get("공개", "").upper() != PUBLIC_VALUE:
             hidden += 1
             continue
         for name in ("제목", "내용"):
             if not row.get(name):
-                raise DataError(f"{number}행의 {name}이(가) 비어 있습니다.")
+                raise DataError(f"{number}행의 필수 항목 '{name}'이(가) 비어 있습니다.")
         link = row.get("링크", "")
         if link and not re.match(r"https?://", link):
             raise DataError(f"{number}행의 링크는 http:// 또는 https://로 시작해야 합니다: {link}")
         items.append({"row": number, "title": row["제목"], "body": row["내용"],
                       "category": row.get("분류", "") or "기타", "link": link})
     if not items:
-        raise DataError("공개 열이 Y인 행이 없습니다. 웹에 보일 행의 공개 열에 Y를 적으세요.")
+        raise DataError(f"공개 열이 'Y'인 행이 없습니다. (총 {total_data_rows}개 행 검사 완료: 비공개 {hidden}개)")
     return items, hidden
 
 
